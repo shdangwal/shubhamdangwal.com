@@ -1,3 +1,22 @@
 /* You can add global styles to this file, and also import other style files */
 
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background-color: #fff;
+  color: #171717;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.dark body {
+  background-color: #0a0a0a;
+  color: #ededed;
+}
