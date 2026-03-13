@@ -7,6 +7,7 @@ const CELL_SIZE = 6;
 const CHAOS_MS = 3000;
 const TICK_MS = 150;
 const CONVERGE_FRAMES = 25;
+const TEXT_FADE_SPEED = 0.010; // ~1.7s at 60fps
 
 @Component({
   selector: 'app-background-canvas',
@@ -22,6 +23,7 @@ export class BackgroundCanvas {
   private heroRect: { x0: number; y0: number; x1: number; y1: number } | null = null;
   private phase: 'chaos' | 'converging' | 'settled' = 'chaos';
   private convergeFrame = 0;
+  private textFade = 0; // 0 = same as bg cells, 1 = full text color
   private ctx: CanvasRenderingContext2D | null = null;
   private gw = 0;
   private gh = 0;
@@ -36,15 +38,25 @@ export class BackgroundCanvas {
       this.initGrid();
       this.render();
 
-      // RAF-based tick loop
+      // RAF loop: tick at TICK_MS, render every frame during text fade
       let lastTick = performance.now();
       let rafId = 0;
       const loop = (now: number) => {
         rafId = requestAnimationFrame(loop);
-        if (now - lastTick < TICK_MS) return;
-        lastTick = now;
-        this.tick();
-        this.render();
+        let needsRender = false;
+
+        if (now - lastTick >= TICK_MS) {
+          lastTick = now;
+          this.tick();
+          needsRender = true;
+        }
+
+        if (this.phase === 'settled' && this.textFade < 1) {
+          this.textFade = Math.min(1, this.textFade + TEXT_FADE_SPEED);
+          needsRender = true;
+        }
+
+        if (needsRender) this.render();
       };
       rafId = requestAnimationFrame(loop);
 
@@ -73,6 +85,7 @@ export class BackgroundCanvas {
       const resizeHandler = () => {
         this.phase = 'chaos';
         this.convergeFrame = 0;
+        this.textFade = 0;
         this.heroRect = null;
         this.textMask = new Uint8Array(0);
         this.initGrid();
@@ -208,6 +221,23 @@ export class BackgroundCanvas {
     }
   }
 
+  /** Interpolates from bg-cell color (fade=0) to full text color (fade=1). */
+  private lerpTextColor(isDark: boolean, fade: number): string {
+    if (fade <= 0) return isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+    if (fade >= 1) return isDark ? '#e5e5e5' : '#171717';
+    if (isDark) {
+      // rgba(255,255,255,0.15) → rgba(229,229,229,1.0)
+      const v = Math.round(255 - 26 * fade);       // 255 → 229
+      const a = (0.15 + 0.85 * fade).toFixed(3);
+      return `rgba(${v},${v},${v},${a})`;
+    } else {
+      // rgba(0,0,0,0.15) → rgba(23,23,23,1.0)
+      const v = Math.round(23 * fade);              // 0 → 23
+      const a = (0.15 + 0.85 * fade).toFixed(3);
+      return `rgba(${v},${v},${v},${a})`;
+    }
+  }
+
   private render(): void {
     const canvas = this.canvasRef()?.nativeElement;
     const ctx = this.ctx;
@@ -228,11 +258,8 @@ export class BackgroundCanvas {
 
     // Cells
     const isSettled = this.phase === 'settled';
-    const showText = this.phase !== 'chaos';
-    const textColor = isDark ? '#e5e5e5' : '#171717';
-    const bgColor = isSettled
-      ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')
-      : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)');
+    const bgColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+    const textCellColor = this.lerpTextColor(isDark, this.textFade);
 
     const cells = this.grid.cells;
     const mask = this.textMask;
@@ -247,7 +274,8 @@ export class BackgroundCanvas {
         const isText = mask[i] === 1;
         // In settled phase: skip non-text cells inside hero bounds
         if (isSettled && hr && x >= hr.x0 && x < hr.x1 && y >= hr.y0 && y < hr.y1 && !isText) continue;
-        ctx.fillStyle = (showText && isText) ? textColor : bgColor;
+        // Text cells fade in after settling; all other cells use bgColor uniformly
+        ctx.fillStyle = (isSettled && isText) ? textCellColor : bgColor;
         ctx.fillRect(x * cs + 1, y * cs + 1, cs - 2, cs - 2);
       }
     }
