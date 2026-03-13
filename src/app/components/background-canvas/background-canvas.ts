@@ -213,7 +213,7 @@ export class BackgroundCanvas {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Grid lines
-    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)';
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)';
     ctx.lineWidth = 0.5;
     for (let x = 0; x <= canvas.width; x += CELL_SIZE) {
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
@@ -227,8 +227,8 @@ export class BackgroundCanvas {
     const showText = this.phase !== 'chaos';
     const textColor = isDark ? '#e5e5e5' : '#171717';
     const bgColor = isSettled
-      ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)')
-      : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)');
+      ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')
+      : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)');
 
     const cells = this.grid.cells;
     const mask = this.textMask;
