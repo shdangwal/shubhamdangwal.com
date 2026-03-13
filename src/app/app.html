@@ -1,5 +1,5 @@
 <app-background-canvas />
-<app-navbar />
-<main class="flex-1 min-h-0 px-6 pb-2">
+<app-navbar [style.opacity]="settled() ? '1' : '0'" style="transition: opacity 1s ease" />
+<main class="flex-1 min-h-0 px-6 pb-2" [style.opacity]="settled() ? '1' : '0'" style="transition: opacity 1s ease">
   <router-outlet />
 </main>

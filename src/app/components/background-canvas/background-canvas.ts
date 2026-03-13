@@ -1,6 +1,7 @@
 import { Component, DestroyRef, inject, afterNextRender, ElementRef, viewChild } from '@angular/core';
 import { createGrid, nextGeneration, spawnCluster, Grid } from '../../core/game-of-life.engine';
 import { textToPattern } from '../../core/pixel-font.data';
+import { GolPhaseService } from '../../core/gol-phase.service';
 
 const CELL_SIZE = 6;
 const CHAOS_MS = 3000;
@@ -14,6 +15,7 @@ const CONVERGE_FRAMES = 25;
 export class BackgroundCanvas {
   private readonly canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly destroyRef = inject(DestroyRef);
+  private readonly golPhase = inject(GolPhaseService);
 
   private grid: Grid = createGrid(1, 1);
   private textMask: Uint8Array = new Uint8Array(0);
@@ -112,6 +114,7 @@ export class BackgroundCanvas {
     if (!heroEl) {
       // Not on home route — skip convergence
       this.phase = 'settled';
+      this.golPhase.settled.set(true);
       return;
     }
 
@@ -184,6 +187,7 @@ export class BackgroundCanvas {
           }
         }
         this.phase = 'settled';
+        this.golPhase.settled.set(true);
       }
       return;
     }
