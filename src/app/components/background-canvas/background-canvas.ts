@@ -61,16 +61,9 @@ export class BackgroundCanvas {
           const cy = Math.floor(req.pixelY / CELL_SIZE);
           const patH = req.pattern.length;
           const patW = req.pattern[0]?.length ?? 0;
-          let ox = cx - Math.floor(patW / 2);
-          let oy = cy - Math.floor(patH / 2);
-          // Avoid stamping over hero region — shift above or below
-          if (this.heroRect) {
-            const { x0, y0, x1, y1 } = this.heroRect;
-            if (ox < x1 && ox + patW > x0 && oy < y1 && oy + patH > y0) {
-              oy = y0 - patH - 2;
-              if (oy < 0) oy = y1 + 2;
-            }
-          }
+          // Clamp to grid bounds; hero enforcement in tick() handles any overlap naturally
+          const ox = Math.max(0, Math.min(this.gw - patW, cx - Math.floor(patW / 2)));
+          const oy = Math.max(0, Math.min(this.gh - patH, cy - Math.floor(patH / 2)));
           stampPattern(this.grid, req.pattern, ox, oy);
           this.golInteraction.stampRequest.set(null);
           needsRender = true;

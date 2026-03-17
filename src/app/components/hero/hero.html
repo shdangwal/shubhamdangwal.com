@@ -26,46 +26,46 @@
       <!-- Dropdown panel (above button) -->
       @if (menuOpen()) {
         <div
-          class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 shadow-lg"
+          class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 max-h-[60vh] overflow-y-auto border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 shadow-lg"
           (click)="$event.stopPropagation()"
         >
           @if (menuView() === 'patterns') {
-            <div class="px-3 pt-3 pb-2">
-              <p class="font-mono text-[9px] tracking-[0.2em] text-neutral-400 dark:text-neutral-600 uppercase mb-2">
+            <div class="px-4 pt-4 pb-3">
+              <p class="font-mono text-[10px] tracking-[0.2em] text-neutral-400 dark:text-neutral-600 uppercase mb-3">
                 Insert Pattern
               </p>
               @for (p of patterns; track p.name) {
                 <button
                   (click)="stampPattern(p.cells)"
-                  class="w-full text-left font-mono text-xs text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 py-2 border-b border-neutral-100 dark:border-neutral-800 last:border-0 flex items-center justify-between transition-colors"
+                  class="w-full text-left font-mono text-sm text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 py-2 border-b border-neutral-100 dark:border-neutral-800 last:border-0 flex items-center justify-between transition-colors"
                 >
                   <span>{{ p.name }}</span>
-                  <span class="text-neutral-400 dark:text-neutral-600 text-[9px] ml-2 shrink-0">{{ p.tag }}</span>
+                  <span class="text-neutral-400 dark:text-neutral-600 text-[10px] ml-2 shrink-0">{{ p.tag }}</span>
                 </button>
               }
               <button
                 (click)="showExplainer()"
-                class="w-full text-left font-mono text-[10px] text-neutral-400 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-400 pt-2 pb-1 transition-colors"
+                class="w-full text-left font-mono text-xs text-neutral-400 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-400 pt-3 pb-1 transition-colors"
               >&#x2139; What is Game of Life?</button>
             </div>
           } @else {
-            <div class="px-3 pt-3 pb-3">
+            <div class="px-4 pt-4 pb-4">
               <button
                 (click)="backToPatterns()"
-                class="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-400 mb-3 transition-colors block"
+                class="font-mono text-xs text-neutral-400 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-400 mb-4 transition-colors block"
               >← back</button>
-              <p class="font-mono text-[9px] tracking-[0.2em] text-neutral-400 dark:text-neutral-600 uppercase mb-2">
+              <p class="font-mono text-[10px] tracking-[0.2em] text-neutral-400 dark:text-neutral-600 uppercase mb-3">
                 Game of Life
               </p>
-              <p class="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 leading-relaxed mb-2">
+              <p class="font-mono text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-3">
                 Devised by John Conway in 1970 — a cellular automaton where each cell lives or dies based on its neighbours.
               </p>
-              <div class="font-mono text-[9px] text-neutral-400 dark:text-neutral-600 leading-loose mb-2">
+              <div class="font-mono text-xs text-neutral-400 dark:text-neutral-500 leading-loose mb-3">
                 <div>· Live cell + 2–3 neighbours &rarr; survives</div>
                 <div>· Dead cell + 3 neighbours &rarr; born</div>
                 <div>· All others &rarr; dead</div>
               </div>
-              <p class="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 leading-relaxed">
+              <p class="font-mono text-sm text-neutral-400 dark:text-neutral-500 leading-relaxed">
                 From three rules, unlimited complexity emerges.
               </p>
             </div>
