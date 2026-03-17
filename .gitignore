@@ -6,6 +6,7 @@
 /out-tsc
 /bazel-out
 /docs
+/.superpowers
 
 # Node
 /node_modules

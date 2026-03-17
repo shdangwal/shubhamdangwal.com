@@ -1,13 +1,16 @@
 import { Component, DestroyRef, inject, afterNextRender, ElementRef, viewChild } from '@angular/core';
-import { createGrid, nextGeneration, spawnCluster, Grid } from '../../core/game-of-life.engine';
+import { createGrid, nextGeneration, spawnCluster, stampPattern, Grid } from '../../core/game-of-life.engine';
 import { textToPattern } from '../../core/pixel-font.data';
 import { GolPhaseService } from '../../core/gol-phase.service';
+import { GolInteractionService } from '../../core/gol-interaction.service';
 
 const CELL_SIZE = 6;
 const CHAOS_MS = 3000;
 const TICK_MS = 150;
 const CONVERGE_FRAMES = 25;
 const TEXT_FADE_SPEED = 0.010; // ~1.7s at 60fps
+const PULSE_PERIOD_TICKS = 4;  // ~600ms blink period
+const DISRUPT_DURATION_MS = 4000;
 
 @Component({
   selector: 'app-background-canvas',
@@ -17,13 +20,19 @@ export class BackgroundCanvas {
   private readonly canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly destroyRef = inject(DestroyRef);
   private readonly golPhase = inject(GolPhaseService);
+  private readonly golInteraction = inject(GolInteractionService);
 
   private grid: Grid = createGrid(1, 1);
   private textMask: Uint8Array = new Uint8Array(0);
+  private pulseMask: Uint8Array = new Uint8Array(0);
   private heroRect: { x0: number; y0: number; x1: number; y1: number } | null = null;
   private phase: 'chaos' | 'converging' | 'settled' = 'chaos';
+  private namePhase: 'resting' | 'disrupted' = 'resting';
   private convergeFrame = 0;
-  private textFade = 0; // 0 = same as bg cells, 1 = full text color
+  private textFade = 0;
+  private pulseTick = 0;
+  private disruptSeenRequest = 0;
+  private disruptEndTime = 0;
   private ctx: CanvasRenderingContext2D | null = null;
   private gw = 0;
   private gh = 0;
@@ -38,19 +47,65 @@ export class BackgroundCanvas {
       this.initGrid();
       this.render();
 
-      // RAF loop: tick at TICK_MS, render every frame during text fade
+      // RAF loop: tick simulation at TICK_MS, render every frame during fade/disruption
       let lastTick = performance.now();
       let rafId = 0;
       const loop = (now: number) => {
         rafId = requestAnimationFrame(loop);
         let needsRender = false;
 
+        // Consume stamp request
+        const req = this.golInteraction.stampRequest();
+        if (req && this.phase === 'settled') {
+          const cx = Math.floor(req.pixelX / CELL_SIZE);
+          const cy = Math.floor(req.pixelY / CELL_SIZE);
+          const patH = req.pattern.length;
+          const patW = req.pattern[0]?.length ?? 0;
+          let ox = cx - Math.floor(patW / 2);
+          let oy = cy - Math.floor(patH / 2);
+          // Avoid stamping over hero region — shift above or below
+          if (this.heroRect) {
+            const { x0, y0, x1, y1 } = this.heroRect;
+            if (ox < x1 && ox + patW > x0 && oy < y1 && oy + patH > y0) {
+              oy = y0 - patH - 2;
+              if (oy < 0) oy = y1 + 2;
+            }
+          }
+          stampPattern(this.grid, req.pattern, ox, oy);
+          this.golInteraction.stampRequest.set(null);
+          needsRender = true;
+        }
+
+        // Consume disrupt request
+        const disruptCount = this.golInteraction.disruptRequest();
+        if (
+          disruptCount !== this.disruptSeenRequest &&
+          this.phase === 'settled' &&
+          this.namePhase === 'resting'
+        ) {
+          this.disruptSeenRequest = disruptCount;
+          this.namePhase = 'disrupted';
+          this.disruptEndTime = now + DISRUPT_DURATION_MS;
+          this.golInteraction.disruptionActive.set(true);
+          needsRender = true;
+        }
+
+        // End disruption — next tick() will hard-snap hero region via resting enforcement
+        if (this.namePhase === 'disrupted' && now >= this.disruptEndTime) {
+          this.namePhase = 'resting';
+          this.pulseTick = 0;
+          this.golInteraction.disruptionActive.set(false);
+          needsRender = true;
+        }
+
+        // Simulation tick
         if (now - lastTick >= TICK_MS) {
           lastTick = now;
           this.tick();
           needsRender = true;
         }
 
+        // Text fade (runs every RAF frame while in progress)
         if (this.phase === 'settled' && this.textFade < 1) {
           this.textFade = Math.min(1, this.textFade + TEXT_FADE_SPEED);
           needsRender = true;
@@ -60,10 +115,10 @@ export class BackgroundCanvas {
       };
       rafId = requestAnimationFrame(loop);
 
-      // Transition to convergence after chaos phase
+      // Start convergence after chaos phase
       let convergeTimer = setTimeout(() => this.startConvergence(), CHAOS_MS);
 
-      // Mouse: only active in settled phase, skip hero region
+      // Mouse: settled phase only, skip hero region
       let lastMouse = 0;
       const mouseMoveHandler = (e: MouseEvent) => {
         if (this.phase !== 'settled') return;
@@ -81,13 +136,17 @@ export class BackgroundCanvas {
       };
       document.addEventListener('mousemove', mouseMoveHandler);
 
-      // Resize: full reset back to chaos
+      // Resize: full reset to chaos
       const resizeHandler = () => {
         this.phase = 'chaos';
+        this.namePhase = 'resting';
         this.convergeFrame = 0;
         this.textFade = 0;
+        this.pulseTick = 0;
         this.heroRect = null;
         this.textMask = new Uint8Array(0);
+        this.pulseMask = new Uint8Array(0);
+        this.golInteraction.disruptionActive.set(false);
         this.initGrid();
         this.render();
         clearTimeout(convergeTimer);
@@ -125,7 +184,6 @@ export class BackgroundCanvas {
   private startConvergence(): void {
     const heroEl = document.querySelector('[data-hero]') as HTMLElement | null;
     if (!heroEl) {
-      // Not on home route — skip convergence
       this.phase = 'settled';
       this.golPhase.settled.set(true);
       return;
@@ -138,7 +196,7 @@ export class BackgroundCanvas {
     const y1 = Math.ceil(rect.bottom / CELL_SIZE);
     this.heroRect = { x0, y0, x1, y1 };
 
-    // Build full-canvas-sized text mask
+    // Build textMask
     this.textMask = new Uint8Array(this.gw * this.gh);
     const pattern = textToPattern('SHUBHAM\nDANGWAL', 2);
     const patH = pattern.length;
@@ -158,6 +216,18 @@ export class BackgroundCanvas {
       }
     }
 
+    // Build pulseMask: topmost text cell every ~12 grid columns (≈ one blinker per glyph)
+    this.pulseMask = new Uint8Array(this.gw * this.gh);
+    for (let x = x0; x < x1; x += 12) {
+      for (let y = y0; y < y1; y++) {
+        const i = y * this.gw + x;
+        if (this.textMask[i]) {
+          this.pulseMask[i] = 1;
+          break;
+        }
+      }
+    }
+
     this.phase = 'converging';
     this.convergeFrame = 0;
   }
@@ -171,15 +241,13 @@ export class BackgroundCanvas {
     if (this.phase === 'converging') {
       this.convergeFrame++;
       const t = Math.min(1, this.convergeFrame / CONVERGE_FRAMES);
-      const eased = t * t * (3 - 2 * t); // smoothstep
+      const eased = t * t * (3 - 2 * t);
 
-      // Evolve full grid first
       this.grid = nextGeneration(this.grid);
-      const cells = this.grid.cells; // re-alias from new Grid object
+      const cells = this.grid.cells;
       const mask = this.textMask;
       const { x0, y0, x1, y1 } = this.heroRect!;
 
-      // Clamp hero region: coax text cells on, kill non-text cells
       for (let y = y0; y < y1; y++) {
         for (let x = x0; x < x1; x++) {
           const i = y * this.gw + x;
@@ -191,7 +259,6 @@ export class BackgroundCanvas {
         }
       }
 
-      // Hard snap on final frame
       if (this.convergeFrame >= CONVERGE_FRAMES) {
         for (let y = y0; y < y1; y++) {
           for (let x = x0; x < x1; x++) {
@@ -207,17 +274,24 @@ export class BackgroundCanvas {
 
     if (this.phase === 'settled') {
       this.grid = nextGeneration(this.grid);
-      const cells = this.grid.cells; // re-alias from new Grid object
-      if (this.heroRect) {
+      const cells = this.grid.cells;
+
+      if (this.namePhase === 'resting' && this.heroRect) {
         const mask = this.textMask;
+        const pulse = this.pulseMask;
         const { x0, y0, x1, y1 } = this.heroRect;
+        this.pulseTick++;
+        const pulseOn = Math.floor(this.pulseTick / PULSE_PERIOD_TICKS) % 2 === 0;
+
         for (let y = y0; y < y1; y++) {
           for (let x = x0; x < x1; x++) {
             const i = y * this.gw + x;
-            cells[i] = mask[i]; // text alive, non-text dead
+            // Pulse cells blink; all other text cells held static
+            cells[i] = pulse[i] ? (pulseOn ? 1 : 0) : mask[i];
           }
         }
       }
+      // namePhase === 'disrupted': no hero enforcement — pure GoL runs freely
     }
   }
 
@@ -226,13 +300,11 @@ export class BackgroundCanvas {
     if (fade <= 0) return isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
     if (fade >= 1) return isDark ? '#e5e5e5' : '#171717';
     if (isDark) {
-      // rgba(255,255,255,0.15) → rgba(229,229,229,1.0)
-      const v = Math.round(255 - 26 * fade);       // 255 → 229
+      const v = Math.round(255 - 26 * fade);
       const a = (0.15 + 0.85 * fade).toFixed(3);
       return `rgba(${v},${v},${v},${a})`;
     } else {
-      // rgba(0,0,0,0.15) → rgba(23,23,23,1.0)
-      const v = Math.round(23 * fade);              // 0 → 23
+      const v = Math.round(23 * fade);
       const a = (0.15 + 0.85 * fade).toFixed(3);
       return `rgba(${v},${v},${v},${a})`;
     }
@@ -258,6 +330,7 @@ export class BackgroundCanvas {
 
     // Cells
     const isSettled = this.phase === 'settled';
+    const isDisrupted = this.namePhase === 'disrupted';
     const bgColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
     const textCellColor = this.lerpTextColor(isDark, this.textFade);
 
@@ -272,10 +345,10 @@ export class BackgroundCanvas {
         const i = y * gw + x;
         if (!cells[i]) continue;
         const isText = mask[i] === 1;
-        // In settled phase: skip non-text cells inside hero bounds
-        if (isSettled && hr && x >= hr.x0 && x < hr.x1 && y >= hr.y0 && y < hr.y1 && !isText) continue;
-        // Text cells fade in after settling; all other cells use bgColor uniformly
-        ctx.fillStyle = (isSettled && isText) ? textCellColor : bgColor;
+        // In settled + resting: skip non-text cells inside hero bounds
+        if (isSettled && !isDisrupted && hr && x >= hr.x0 && x < hr.x1 && y >= hr.y0 && y < hr.y1 && !isText) continue;
+        // Text color only when resting — disruption strips the visual distinction
+        ctx.fillStyle = (isSettled && !isDisrupted && isText) ? textCellColor : bgColor;
         ctx.fillRect(x * cs + 1, y * cs + 1, cs - 2, cs - 2);
       }
     }
